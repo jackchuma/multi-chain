@@ -69,17 +69,16 @@ export default class Syncer {
     let blockNumber = 0n;
 
     while (true) {
-      const latestBlockNumber = await client.getBlockNumber();
+      const latestBlock = await client.getBlock();
 
-      if (blockNumber >= latestBlockNumber) {
+      if (blockNumber >= latestBlock.number) {
         await sleep(1000);
         continue;
       }
 
-      blockNumber = latestBlockNumber;
+      blockNumber = latestBlock.number;
 
-      const block = await client.getBlock({ blockNumber });
-      const opts = this.buildSubmitStateRootOpts(block, isSource);
+      const opts = this.buildSubmitStateRootOpts(latestBlock, isSource);
       await this.submitStateRoot(opts);
 
       await sleep(1000);
