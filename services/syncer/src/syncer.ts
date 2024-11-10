@@ -1,4 +1,12 @@
-import { createPublicClient, createWalletClient, http, type Chain } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Account,
+  type Block,
+  type Chain,
+  type WalletClient,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sleep } from "bun";
 
@@ -7,6 +15,10 @@ import { chainB } from "./chains/chainB";
 import { mockL1 } from "./chains/mockL1";
 import BeaconOracle from "./abis/BeaconOracle";
 import Rollup from "./abis/Rollup";
+import type {
+  PublicClientWithChain,
+  SubmitStateRootOpts,
+} from "./types/syncer.types";
 
 const rollups = {
   [chainA.id]: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
@@ -18,43 +30,42 @@ const beaconContracts = {
 } as any;
 
 export default class Syncer {
-  publicClient: any;
-  sourceWallet: any;
-
-  targetClient: any;
-  targetWallet: any;
+  account: Account;
+  l2PublicClient: PublicClientWithChain;
+  l1PublicClient: PublicClientWithChain;
+  l2WalletClient: WalletClient;
+  l1WalletClient: WalletClient;
 
   constructor(targetChain: Chain, pKey: `0x${string}`) {
-    this.publicClient = createPublicClient({
-      chain: mockL1,
-      transport: http(),
-    });
-    this.sourceWallet = createWalletClient({
-      chain: mockL1,
-      transport: http(),
-      account: privateKeyToAccount(pKey),
-    });
-
-    this.targetClient = createPublicClient({
+    this.account = privateKeyToAccount(pKey);
+    this.l2PublicClient = createPublicClient({
       chain: targetChain,
       transport: http(),
     });
-    this.targetWallet = createWalletClient({
+    this.l1PublicClient = createPublicClient({
+      chain: mockL1,
+      transport: http(),
+    });
+    this.l2WalletClient = createWalletClient({
       chain: targetChain,
       transport: http(),
-      account: privateKeyToAccount(pKey),
+    });
+    this.l1WalletClient = createWalletClient({
+      chain: mockL1,
+      transport: http(),
     });
   }
 
   async monitorChains() {
     await Promise.all([
-      this.monitorChain(this.publicClient, true),
-      this.monitorChain(this.targetClient, false),
+      this.monitorChain(this.l1PublicClient),
+      this.monitorChain(this.l2PublicClient),
     ]);
   }
 
-  private async monitorChain(client: any, isSource: boolean) {
+  private async monitorChain(client: PublicClientWithChain) {
     console.log(`Monitoring ${client.chain.name} chain...`);
+    const isSource = client.chain.id === mockL1.id;
     let blockNumber = 0n;
 
     while (true) {
@@ -68,53 +79,48 @@ export default class Syncer {
       blockNumber = latestBlockNumber;
 
       const block = await client.getBlock({ blockNumber });
-      if (isSource) {
-        await this.submitStateRootToTargetChain(
-          blockNumber,
-          block.timestamp,
-          block.stateRoot
-        );
-      } else {
-        await this.submitStateRootToSourceChain(
-          blockNumber,
-          block.timestamp,
-          block.stateRoot
-        );
-      }
+      const opts = this.buildSubmitStateRootOpts(block, isSource);
+      await this.submitStateRoot(opts);
 
       await sleep(1000);
     }
   }
 
-  async submitStateRootToTargetChain(
-    blockNumber: bigint,
-    blockTimestamp: bigint,
-    stateRoot: string
-  ) {
-    console.log("Submitting state root to target chain...");
-    const hash = await this.targetWallet.writeContract({
-      address: beaconContracts[this.targetClient.chain.id],
-      abi: BeaconOracle,
-      functionName: "commitBeaconRoot",
-      args: [blockNumber, blockTimestamp, stateRoot],
-    });
-    await this.targetClient.waitForTransactionReceipt({ hash });
-    console.log("Transaction successful!");
-  }
-
-  async submitStateRootToSourceChain(
-    blockNumber: bigint,
-    blockTimestamp: bigint,
-    stateRoot: string
-  ) {
-    console.log("Submitting state root to source chain...");
-    const hash = await this.sourceWallet.writeContract({
-      address: rollups[this.targetClient.chain.id],
+  private buildSubmitStateRootOpts(
+    block: Block,
+    isSource: boolean
+  ): SubmitStateRootOpts {
+    const opts: SubmitStateRootOpts = {
+      address: rollups[this.l2PublicClient.chain.id],
       abi: Rollup,
       functionName: "commitOutputRoot",
+      blockNumber: block.number as bigint,
+      blockTimestamp: block.timestamp,
+      stateRoot: block.stateRoot,
+      chain: mockL1,
+      walletClient: this.l1WalletClient,
+      publicClient: this.l1PublicClient,
+    };
+    if (isSource) {
+      opts.address = beaconContracts[this.l2PublicClient.chain.id];
+      opts.abi = BeaconOracle;
+      opts.functionName = "commitBeaconRoot";
+      opts.chain = this.l2PublicClient.chain;
+      opts.walletClient = this.l2WalletClient;
+      opts.publicClient = this.l2PublicClient;
+    }
+    return opts;
+  }
+
+  private async submitStateRoot(opts: SubmitStateRootOpts): Promise<void> {
+    const { blockNumber, blockTimestamp, stateRoot, ...rest } = opts;
+    console.log("Submitting state root...");
+    const hash = await opts.walletClient.writeContract({
+      ...rest,
       args: [blockNumber, blockTimestamp, stateRoot],
+      account: this.account,
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
+    await opts.publicClient.waitForTransactionReceipt({ hash });
     console.log("Transaction successful!");
   }
 }
