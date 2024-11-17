@@ -1,7 +1,9 @@
 import {
   createPublicClient,
   createWalletClient,
+  encodePacked,
   http,
+  sha256,
   type Account,
   type Block,
   type Chain,
@@ -19,6 +21,7 @@ import type {
   PublicClientWithChain,
   SubmitStateRootOpts,
 } from "./types/syncer.types";
+import { MOCK_L1_STATE_ROOT_PROOF } from "./constants";
 
 const rollups = {
   [chainA.id]: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
@@ -107,6 +110,7 @@ export default class Syncer {
       opts.chain = this.l2PublicClient.chain;
       opts.walletClient = this.l2WalletClient;
       opts.publicClient = this.l2PublicClient;
+      opts.stateRoot = this.deriveBeaconRoot(block.stateRoot);
     }
     return opts;
   }
@@ -121,5 +125,24 @@ export default class Syncer {
     });
     await opts.publicClient.waitForTransactionReceipt({ hash });
     console.log("Transaction successful!");
+  }
+
+  private deriveBeaconRoot(curr: `0x${string}`): `0x${string}` {
+    let index = 6434;
+    const types = ["bytes32", "bytes32"];
+
+    for (let i = 0; i < 12; i++) {
+      const preImage = [MOCK_L1_STATE_ROOT_PROOF[i], curr];
+
+      if ((index & 1) === 0) {
+        preImage.reverse();
+      }
+
+      curr = sha256(encodePacked(types, preImage));
+
+      index >>= 1;
+    }
+
+    return curr;
   }
 }
