@@ -13,18 +13,18 @@ contract BeaconOracleTest is Test {
         beaconOracle = deployer.run();
     }
 
-    function test_commitBeaconRoot(uint256 blockNumber, uint256 blockTimestamp, bytes32 stateRoot) public {
-        beaconOracle.commitBeaconRoot(blockNumber, blockTimestamp, stateRoot);
+    function test_commitBeaconRoot(uint256 blockNumber, uint256 blockTimestamp, bytes32 beaconRoot) public {
+        beaconOracle.commitBeaconRoot(blockNumber, blockTimestamp, beaconRoot);
 
         assertEq(beaconOracle.latestBlock(), blockNumber);
-        assertEq(beaconOracle.beaconRoots(blockTimestamp), stateRoot);
+        assertEq(beaconOracle.beaconRoots(blockTimestamp), beaconRoot);
     }
 
-    function test_staticcall(uint256 blockNumber, uint256 blockTimestamp, bytes32 stateRoot) public {
-        beaconOracle.commitBeaconRoot(blockNumber, blockTimestamp, stateRoot);
+    function test_staticcall(uint256 blockNumber, uint256 blockTimestamp, bytes32 beaconRoot) public {
+        beaconOracle.commitBeaconRoot(blockNumber, blockTimestamp, beaconRoot);
 
         (bool success, bytes memory returnData) = address(beaconOracle).staticcall(abi.encode(blockTimestamp));
         assertTrue(success);
-        assertEq(abi.decode(returnData, (bytes32)), stateRoot);
+        assertEq(abi.decode(returnData, (bytes32)), beaconRoot);
     }
 }
