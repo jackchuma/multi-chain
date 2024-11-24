@@ -24,3 +24,36 @@ setup-contracts:
 
 start-syncer:
 	cd services/syncer && CHAIN_A_KEY=$(CHAIN_A_KEY) CHAIN_B_KEY=$(CHAIN_B_KEY) bun run index.ts
+
+setup-contracts-arbitrum:
+	cd contracts &&forge create --rpc-url $(MOCK_L1_URL) --private-key $(PRIVATE_KEY) src/rollups/MockArbitrumRollup.sol:MockArbitrumRollup
+	cd contracts &&forge create --rpc-url $(MOCK_L1_URL) --private-key $(PRIVATE_KEY) src/rollups/MockArbitrumRollup.sol:MockArbitrumRollup
+	cd contracts && forge script script/DeployBeaconOracle.s.sol:DeployBeaconOracle --private-key $(PRIVATE_KEY) --rpc-url $(CHAIN_A_URL) --broadcast -vvvv
+
+start-syncer-arbitrum:
+	cd services/syncer && MODE=arbitrum CHAIN_A_KEY=$(CHAIN_A_KEY) CHAIN_B_KEY=$(CHAIN_B_KEY) bun run index.ts
+
+setup-contracts-opstack:
+	cd contracts &&forge create --rpc-url $(MOCK_L1_URL) --private-key $(PRIVATE_KEY) src/rollups/MockOPStackRollup.sol:MockOPStackRollup
+	cd contracts &&forge create --rpc-url $(MOCK_L1_URL) --private-key $(PRIVATE_KEY) src/rollups/MockOPStackRollup.sol:MockOPStackRollup
+	cd contracts && forge script script/DeployBeaconOracle.s.sol:DeployBeaconOracle --private-key $(PRIVATE_KEY) --rpc-url $(CHAIN_A_URL) --broadcast -vvvv
+	cd contracts && forge script script/DeployBeaconOracle.s.sol:DeployBeaconOracle --private-key $(PRIVATE_KEY) --rpc-url $(CHAIN_B_URL) --broadcast -vvvv
+
+start-syncer-opstack:
+	cd services/syncer && MODE=opstack CHAIN_A_KEY=$(CHAIN_A_KEY) CHAIN_B_KEY=$(CHAIN_B_KEY) bun run index.ts
+
+start-opstack:
+	cd contracts && anvil & \
+	cd contracts && anvil --port 8546 --chain-id 111111 & \
+	cd contracts && anvil --port 8547 --chain-id 111112 & \
+	cd contracts && forge create --rpc-url $(MOCK_L1_URL) --private-key $(PRIVATE_KEY) src/rollups/MockOPStackRollup.sol:MockOPStackRollup && \
+	forge create --rpc-url $(MOCK_L1_URL) --private-key $(PRIVATE_KEY) src/rollups/MockOPStackRollup.sol:MockOPStackRollup && \
+	forge script script/DeployBeaconOracle.s.sol:DeployBeaconOracle --private-key $(PRIVATE_KEY) --rpc-url $(CHAIN_A_URL) --broadcast -vvvv && \
+	forge script script/DeployBeaconOracle.s.sol:DeployBeaconOracle --private-key $(PRIVATE_KEY) --rpc-url $(CHAIN_B_URL) --broadcast -vvvv && \
+	cd ../services/syncer && MODE=opstack CHAIN_A_KEY=$(CHAIN_A_KEY) CHAIN_B_KEY=$(CHAIN_B_KEY) bun run index.ts && \
+	wait
+
+stop-all-chains:
+	kill $(shell lsof -t -i:8545)
+	kill $(shell lsof -t -i:8546)
+	kill $(shell lsof -t -i:8547)

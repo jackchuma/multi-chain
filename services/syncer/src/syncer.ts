@@ -1,9 +1,7 @@
 import {
   createPublicClient,
   createWalletClient,
-  encodePacked,
   http,
-  sha256,
   type Account,
   type Block,
   type Chain,
@@ -16,20 +14,16 @@ import { chainA } from "./chains/chainA";
 import { chainB } from "./chains/chainB";
 import { mockL1 } from "./chains/mockL1";
 import BeaconOracle from "./abis/BeaconOracle";
-import Rollup from "./abis/Rollup";
 import type {
   PublicClientWithChain,
   SubmitStateRootOpts,
 } from "./types/syncer.types";
-import { MOCK_L1_STATE_ROOT_PROOF } from "./constants";
+import deriveBeaconRoot from "./common/utils/deriveBeaconRoot";
+import buildRollupInput from "./common/utils/buildRollupInput";
 
-const rollups = {
-  [chainA.id]: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-  [chainB.id]: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-} as any;
 const beaconContracts = {
   [chainA.id]: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-  [chainB.id]: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+  [chainB.id]: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
 } as any;
 
 export default class Syncer {
@@ -92,17 +86,12 @@ export default class Syncer {
     block: Block,
     isSource: boolean
   ): SubmitStateRootOpts {
-    const opts: SubmitStateRootOpts = {
-      address: rollups[this.l2PublicClient.chain.id],
-      abi: Rollup,
-      functionName: "commitOutputRoot",
-      blockNumber: block.number as bigint,
-      blockTimestamp: block.timestamp,
-      stateRoot: block.stateRoot,
-      chain: mockL1,
-      walletClient: this.l1WalletClient,
-      publicClient: this.l1PublicClient,
-    };
+    const opts: SubmitStateRootOpts = buildRollupInput(
+      block,
+      this.l2PublicClient.chain,
+      this.l1WalletClient,
+      this.l1PublicClient
+    );
     if (isSource) {
       opts.address = beaconContracts[this.l2PublicClient.chain.id];
       opts.abi = BeaconOracle;
@@ -110,39 +99,22 @@ export default class Syncer {
       opts.chain = this.l2PublicClient.chain;
       opts.walletClient = this.l2WalletClient;
       opts.publicClient = this.l2PublicClient;
-      opts.stateRoot = this.deriveBeaconRoot(block.stateRoot);
+      opts.args = [
+        block.number,
+        block.timestamp,
+        deriveBeaconRoot(block.stateRoot),
+      ];
     }
     return opts;
   }
 
   private async submitStateRoot(opts: SubmitStateRootOpts): Promise<void> {
-    const { blockNumber, blockTimestamp, stateRoot, ...rest } = opts;
     console.log("Submitting state root...");
     const hash = await opts.walletClient.writeContract({
-      ...rest,
-      args: [blockNumber, blockTimestamp, stateRoot],
+      ...opts,
       account: this.account,
     });
     await opts.publicClient.waitForTransactionReceipt({ hash });
     console.log("Transaction successful!");
-  }
-
-  private deriveBeaconRoot(curr: `0x${string}`): `0x${string}` {
-    let index = 6434;
-    const types = ["bytes32", "bytes32"];
-
-    for (let i = 0; i < MOCK_L1_STATE_ROOT_PROOF.length; i++) {
-      const preImage = [MOCK_L1_STATE_ROOT_PROOF[i], curr];
-
-      if ((index & 1) === 0) {
-        preImage.reverse();
-      }
-
-      curr = sha256(encodePacked(types, preImage));
-
-      index >>= 1;
-    }
-
-    return curr;
   }
 }

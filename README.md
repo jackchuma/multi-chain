@@ -16,7 +16,13 @@ In order to run this project, you need the following:
 
 ## Running the Project
 
-Open four separate terminal windows and navigate to the root directory of the project in each terminal.
+To automate all steps for a mock OPStack setup, run:
+
+```bash
+make start-opstack
+```
+
+To run manually, open four separate terminal windows and navigate to the root directory of the project in each terminal.
 
 Terminal 1:
 
